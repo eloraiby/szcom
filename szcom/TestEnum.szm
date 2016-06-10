@@ -1,0 +1,9 @@
+﻿module TestEnum {
+	enum Enum {
+		HELLO	= 0;
+		HELLO2	= 1
+	}
+
+}
+
+

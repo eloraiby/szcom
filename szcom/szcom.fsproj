@@ -25,6 +25,8 @@
     <PlatformTarget>AnyCPU</PlatformTarget>
     <DocumentationFile>bin\Debug\szcom.XML</DocumentationFile>
     <Prefer32Bit>true</Prefer32Bit>
+    <StartArguments>TestEnum.szm</StartArguments>
+    <StartWorkingDirectory>..\..\</StartWorkingDirectory>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -48,7 +50,11 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
+    <Compile Include="Schizo.Tokens.fs" />
+    <Compile Include="Schizo.AST.fs" />
+    <Compile Include="Schizo.Syntax.fs" />
     <Compile Include="Program.fs" />
+    <None Include="TestEnum.szm" />
     <None Include="App.config" />
   </ItemGroup>
   <PropertyGroup>
