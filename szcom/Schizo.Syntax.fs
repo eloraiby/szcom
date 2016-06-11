@@ -54,7 +54,7 @@ type State = {
     member x.addUnqualifiedAlias(name, tyName) = { x with Types = x.Types.Add(name, x.resolve tyName) }
     member x.addType(modName, ty) = x.addQualifiedType(modName, ty).addUnqualifiedAlias(ty.Name, modName + "." + ty.Name)
 
-let parseEnum (tl: Token list) : TyEnum =
+let parseEnum (modName: string) (tl: Token list) : TyEnum =
     let parseEnumCase (tl: Token list) : TyEnumCase * Token list =
         match tl with
         | Token.TokExpression (_, tl) :: t ->
@@ -77,37 +77,122 @@ let parseEnum (tl: Token list) : TyEnum =
                 let case, tl = parseEnumCase tl
                 loop (case :: cases) tl
         let cases = loop [] enumScope
-        { TyEnum.Name   = enumName
+        { TyEnum.Name   = modName + "." + enumName
           TyEnum.Info   = di
           TyEnum.Cases  = cases |> List.rev |> List.toArray
         }
     | xs -> failwith "enum expects a name and a scope, got something else"
 
+let rec parseType (state: State) (tl: Token list) : Ty =
+    let rec parseTypePartial (tl: Token list) : Ty * Token list =
+        match tl with
+        | Token.TokUnit di :: [] -> Ty.Unit, []
 
-//let rec parseType (state: State) (tl: Token list) : Ty * Token list =
-//    match tl with
-//    | Token.TokType (di, typeName) :: Token.TokOperator (_, "->") :: tl -> 
-//        let retTy, tl = parseType state tl
-//        Ty.Function { TyFunction.Info = di
-//                      TyFunction.Param  = state.resolve typeName
-//                      TyFunction.RetVal = retTy
-//                    }, tl
-//    | Token.TokType (di, typeName) :: tl -> state.resolve typeName, tl
-//    | Token.TokTuple (di, tuple) :: Token.TokOperator (_, "->") :: tl ->
-//    | Token.TokTuple (di, tuple) :: tl ->
-//
-//    | _ -> failwith "type can either be a type, a tuple or a function type"
-//
-//and parseTuple (state: State) (tl: Token list) : Ty * Token list =
-//    
-//
-//let parseField (state: State) (tl: Token list) : TyField * Token list =
-//    match tl with
-//    | Token.TokIdentifier (di, fieldName) :: Token.TokOperator (_, ":") :: tl ->
-//
-//let parseRecord (state: State) (tl: Token list) : TyRecord * Token list =
-//    match tl with
-//    | Token.TokType (di, recordName) :: Token.TokScope (_, recordScope) :: tl ->
+        | Token.TokUnit di :: tl ->
+            let retTy, tl = parseTypePartial tl
+            Ty.Function { TyFunction.Info   = di
+                          TyFunction.Param  = Ty.Unit
+                          TyFunction.RetVal = retTy
+                        }, tl
+
+        | Token.TokType (di, modName) :: Token.TokOperator(_, ".") :: Token.TokType(_, typeName) :: Token.TokOperator (_, "->") :: tl ->
+            let retTy, tl = parseTypePartial tl
+            Ty.Function { TyFunction.Info = di
+                          TyFunction.Param  = state.resolve (modName + "." + typeName)
+                          TyFunction.RetVal = retTy
+                        }, tl
+
+        | Token.TokType (di, modName) :: Token.TokOperator(_, ".") :: Token.TokType(_, typeName) :: [] ->
+             state.resolve (modName + "." + typeName), []
+
+        | Token.TokType (di, typeName) :: Token.TokOperator (_, "->") :: tl -> 
+            let retTy, tl = parseTypePartial tl
+            Ty.Function { TyFunction.Info = di
+                          TyFunction.Param  = state.resolve typeName
+                          TyFunction.RetVal = retTy
+                        }, tl
+        | Token.TokType (di, typeName) :: [] -> state.resolve typeName, []
+        | Token.TokTuple (di, tuple) :: Token.TokOperator (_, "->") :: tl ->
+            let retTy, tl = parseTypePartial tl
+            Ty.Function { TyFunction.Info = di
+                          TyFunction.Param  = parseTuple di state tuple
+                          TyFunction.RetVal = retTy
+                        }, tl
+        | Token.TokTuple (di, tuple) :: tl -> parseTuple di state tuple, tl
+
+        | _ -> failwith "type can either be a type, a tuple or a function type"
+
+    match parseTypePartial tl with
+    | ty, [] -> ty
+    | _ -> failwith "parseType: expected the type to be complete, got more"
+
+and parseTuple (di: DebugInfo) (state: State) (tl: Token list) : Ty =
+    let rec loop (types: Ty list) (tl: Token list) =
+        match tl with
+        | [] -> types |> List.rev
+        | h :: t  ->
+            let ty =
+                match h with
+                | Token.TokType (_, ident) -> state.resolve ident
+                | Token.TokIdentifier (_, ident) -> failwith "parseTuple: implement named field"
+                | Token.TokExpression (_, exp) -> parseType state exp
+                | _ -> failwith "parseTuple: unhandled case"
+            loop (ty :: types) t
+
+    let tupleTys = loop [] tl
+    { TyTuple.Info = di
+      TyTuple.Params    = tupleTys |> List.toArray |> Array.map(fun ty -> None, ty)
+    } |> Ty.Tuple
+
+let parseField (state: State) (tl: Token list) : TyField =
+    match tl with
+    | Token.TokIdentifier (di, fieldName) :: Token.TokOperator (_, ":") :: tl ->
+        let ty = parseType state tl
+        { TyField.Name  = fieldName
+          TyField.Info  = di
+          TyField.Type  = ty }
+
+    | _ -> failwith "invalid field syntax"
+
+let parseRecord (modName: string) (state: State) (tl: Token list) : TyRecord =       
+    match tl with
+    | Token.TokType (di, recordName) :: Token.TokScope (_, recordScope) :: [] ->
+        let fields =
+            recordScope
+            |> List.map(fun tok ->
+                match tok with
+                | Token.TokExpression (di, tl) -> parseField state tl
+                | _ -> failwith "parseRecord: expected \"field : Type\" got something else")
+        { TyRecord.Name = modName + "." + recordName
+          TyRecord.Info = di
+          TyRecord.Fields   = fields |> List.toArray
+        }
+    | _ -> failwith "parseRecord: invalid recod syntax"
+
+let parseCase (state: State) (tl: Token list) : TyUnionCase =
+    match tl with
+    | Token.TokType (di, caseName) :: tl ->
+        let ty = parseType state tl
+        { TyUnionCase.Name  = caseName
+          TyUnionCase.Info  = di
+          TyUnionCase.Type  = ty }
+
+    | _ -> failwith "invalid field syntax"
+
+let parseUnion (modName: string) (state: State) (tl: Token list) : TyUnion =
+    match tl with
+    | Token.TokType (di, unionName) :: Token.TokScope (_, unionScope) :: [] ->
+        let cases =
+            unionScope
+            |> List.map (fun tok ->
+                match tok with
+                | Token.TokExpression (di, tl) -> parseCase state tl
+                | _ -> failwith "parseUnion: expect \"Case Type\" got something else")
+        { TyUnion.Name  = modName + "." + unionName
+          TyUnion.Info = di
+          TyUnion.Cases = cases |> List.toArray
+        }
+    | _ -> failwith "parseUnion: invalid union syntax"
 
 let rec parseUse (state: State) (tl: Token list) : State =
     match tl with
@@ -132,11 +217,17 @@ and parseModule (state: State) (tl: Token list) : TyModule =
     let parseModEntry (innerState: State) (modName: string) (tl: Token list) : State * Ty option =
         match tl with
         | Token.TokIdentifier (di, "enum")      :: t ->
-            let ty = parseEnum t |> Ty.Enum
+            let ty = parseEnum modName t |> Ty.Enum
             innerState.addType (modName, ty), Some ty
 
-        | Token.TokIdentifier (di, "record")    :: t -> failwith "implement"
-        | Token.TokIdentifier (di, "union")     :: t -> failwith "implement"
+        | Token.TokIdentifier (di, "record")    :: t ->
+            let ty = parseRecord modName innerState t |> Ty.Record
+            innerState.addType (modName, ty), Some ty
+
+        | Token.TokIdentifier (di, "union")     :: t ->
+            let ty = parseUnion modName innerState t |> Ty.Union
+            innerState.addType (modName, ty), Some ty
+
         | Token.TokIdentifier (di, "interface") :: t -> failwith "implement"
         | Token.TokIdentifier (di, "object")    :: t -> failwith "implement"
         | Token.TokIdentifier (di, "alias")     :: t -> failwith "implement"

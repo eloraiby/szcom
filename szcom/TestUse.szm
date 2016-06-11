@@ -1,0 +1,15 @@
+﻿module TestUse {
+	use TestEnum;
+	use TestRecord;
+	use TestUnion;
+
+	enum Enum2 {
+		HI		= 0;
+		There	= 1
+	};
+
+	record RecordUse {
+		field1	: TestRecord.Rec;
+		field2	: TestEnum.Enum
+	}
+}

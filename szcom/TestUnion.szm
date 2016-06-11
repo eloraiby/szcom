@@ -1,0 +1,10 @@
+﻿module TestUnion {
+
+union Union {
+	UnionCase0 ();
+	UnionCase1 Int;
+	UnionCase2 (Int, Int);
+	UnionCase3 (Char, Int, Real)
+}
+
+}

@@ -1,0 +1,7 @@
+﻿module TestRecord {
+	record Rec {
+		field	: Int;
+		field2	: Bool;
+		field3	: Char
+	}
+}

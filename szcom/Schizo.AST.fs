@@ -36,7 +36,7 @@ and TyInterface = {
 and TyRecord = {
     Name    : string
     Info    : DebugInfo
-    Methods : TyField []
+    Fields  : TyField []
 }
 
 and TyUnionCase = {
@@ -97,7 +97,7 @@ and TyAlias = {
 }
 
 and TyTuple = {
-    Info    : string
+    Info    : DebugInfo
     Params  : (string option * Ty) []
 } with
     member x.Name =
