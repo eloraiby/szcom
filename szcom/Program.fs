@@ -22,7 +22,11 @@ open Schizo.Syntax
 let main argv = 
     if argv.Length = 1
     then
-        let m = parseModuleFile (State.empty()) argv.[0]
+        let fname = argv.[0]
+        let fInfo = System.IO.FileInfo (fname)
+        let folderName  = fInfo.DirectoryName
+        let fname = fInfo.Name
+        let m = parseModuleFile folderName fname (State.empty()) 
         printfn "%A" m
         ()
     else printfn "invalid option: schizocom file.szm"

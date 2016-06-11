@@ -76,12 +76,32 @@ with
         | TokTuple        (_, y) -> printList '(' y ')' ','
         | TokExpression   (_, y) -> printList '~' y '~' ' '
 
+    member x.DebugInfo =
+        match x with
+        | TokUnit         di      -> di
+        | TokBoolean      (di, _) -> di
+        | TokChar         (di, _) -> di
+        | TokInt64        (di, _) -> di
+        | TokReal64       (di, _) -> di
+        | TokIdentifier   (di, _) -> di
+        | TokType         (di, _) -> di
+        | TokGeneric      (di, _) -> di
+        | TokOperator     (di, _) -> di
+        | TokList         (di, _) -> di
+        | TokScope        (di, _) -> di
+        | TokTuple        (di, _) -> di
+        | TokExpression   (di, _) -> di
+
 and DebugInfo = {
-    StreamId        : int
+    StreamId        : string
+    Line            : int
     Offset          : int
 } with
-    static member empty = { StreamId = 0; Offset = 0 }
+    static member empty streamId = { StreamId = streamId; Line = 1; Offset = 0 }
 
+exception TokenException of (DebugInfo * string) list
+
+let tokExcept (di: DebugInfo, message: string) = TokenException ((di, message) :: [])
 
 let private isAlpha ch = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch = '_')
 
@@ -107,9 +127,10 @@ let private readChar (str: Token list) : Token * Token list =
         | 'a'  -> TokChar (di, '\a'), t
         | 't'  -> TokChar (di, '\t'), t
         | '\'' -> TokChar (di, '\''), t
-        | _    -> failwith (sprintf "unknown escape character %c after \\ in char" ch)
+        | _    -> raise (tokExcept (di, sprintf "unknown escape character %c after \\ in char" ch))
     | TokChar (di, ch) :: TokChar (_, '\'') :: t       -> TokChar (di, ch), t
-    | _               -> failwith "readChar: not a well formed char"
+    | h :: t        -> raise (tokExcept (h.DebugInfo, "readChar: unexpected token"))
+    | []            -> failwith "reading a char: not a well formed char"
 
 let rec private readString (acc: Token list) (str: Token list) : Token * Token list =
     match str with
@@ -122,10 +143,10 @@ let rec private readString (acc: Token list) (str: Token list) : Token * Token l
             | 'a'  -> '\a'
             | 't'  -> '\t'
             | '\'' -> '\''
-            | _    -> failwith (sprintf "unknown escape character %c after \\ in string" ch)
+            | _    -> raise (tokExcept (di, sprintf "unknown escape character %c after \\ in string" ch))
         readString (TokChar (di, newCh) :: acc) t
     | ch :: t -> readString (ch :: acc) t
-    | _ -> failwith "readString: ill formated string"
+    | [] -> failwith "ill formated string"
 
 let rec private readSymbolAlphaNum di (acc: Token list) (str: Token list) : Token * Token list =
     match str with
@@ -134,7 +155,7 @@ let rec private readSymbolAlphaNum di (acc: Token list) (str: Token list) : Toke
         let sym = System.String(acc |> List.rev |> Array.ofList |> Array.map (function | TokChar (_, ch) -> ch | _ -> failwith "unreachable"))
         let sym =
             match sym with
-            | ""      -> failwith "invalid identifier (null)"
+            | ""      -> raise (tokExcept (di, "invalid identifier (null)"))
             | "true"  -> TokBoolean (di, true)
             | "false" -> TokBoolean (di, false)
             | str when str.[0] |> isUpper -> TokType    (di, sym)
@@ -192,7 +213,7 @@ let private readNumber di (str: Token list) : Token * Token list=
 
             if intstr.Length <> 0
             then TokInt64 (di, Convert.ToInt64 intstr), nextList
-            else failwith "invalid integer number"
+            else raise (tokExcept (di, "invalid integer number"))
 
         | integral, decimal, [] ->
             let number =  List.append integral decimal 
@@ -200,7 +221,7 @@ let private readNumber di (str: Token list) : Token * Token list=
 
             if number.Length <> 0
             then TokReal64 (di, Convert.ToDouble number), nextList
-            else failwith "invalid floating number"
+            else raise (tokExcept (di, "invalid floating number"))
 
         | integral, decimal, expo ->
             let number = List.append  (List.append integral decimal) expo
@@ -208,10 +229,10 @@ let private readNumber di (str: Token list) : Token * Token list=
 
             if number.Length <> 0
             then TokReal64 (di, Convert.ToDouble number), nextList
-            else failwith "invalid floating number"
+            else raise (tokExcept (di, "invalid floating number"))
 
     match nextList with
-    | TokChar (_, ch) :: l when isAlpha ch -> failwith "invalid number: followed by a alpha or special character, separator or space is needed"
+    | TokChar (di, ch) :: l when isAlpha ch -> raise (tokExcept (di, "invalid number: followed by a alpha or special character, separator or space is needed"))
     | _ -> token, nextList
    
 let rec private skipWS (str: Token list) : Token list =
@@ -243,17 +264,17 @@ let curr2Tup f x y = f(x, y)
 let rec private readListOfTokens di splitterChar endingChar (boxFunc: DebugInfo -> Token list -> Token) (acc: Token list) (str: Token list) : Token * Token list =
     let str = skipWS str
     match str with
-    | []                                 -> failwith (sprintf "%s doesn't have an end '%c'" ((boxFunc di []).TokenTypeName) endingChar)
+    | []                                 -> raise (tokExcept (di, sprintf "%s doesn't have an end '%c'" ((boxFunc di []).TokenTypeName) endingChar))
     | TokChar (_, ch) :: t when ch = endingChar -> let exp = (boxFunc di (acc |> List.rev)) in exp, t
     | _ ->
         let rec readExpression (acc: Token list) (str: Token list) : Token * Token list =
             let str = skipWS str
             match str with
-            | []                                                        -> failwith (sprintf "%s doesn't have an end '%c'" ((boxFunc di []).TokenTypeName) endingChar)
+            | []                                                        -> raise (tokExcept (di, sprintf "%s doesn't have an end '%c'" ((boxFunc di []).TokenTypeName) endingChar))
             | TokChar (_, ch) :: t when ch = endingChar                 -> let exp = acc |> List.rev |> reduceExpression di in exp, str
             | TokChar (_, ch) :: t when ch = splitterChar               ->
                 match skipWS t with
-                | TokChar (_, ch) :: t when ch = endingChar             -> failwith (sprintf "%s ends with splitter '%c'" ((boxFunc di []).TokenTypeName) splitterChar)
+                | TokChar (di, ch) :: t when ch = endingChar            -> raise (tokExcept (di, sprintf "%s ends with splitter '%c'" ((boxFunc di []).TokenTypeName) splitterChar))
                 | _     -> let exp = acc |> List.rev |> reduceExpression di in exp, t
             | _                                                         -> let tok, nextList = nextToken str in readExpression (tok :: acc) nextList
 
@@ -280,7 +301,8 @@ and private nextToken (str: Token list) : Token * Token list =
     | TokChar (di, ch  ) :: t when isDigit ch   -> readNumber di str
     | TokChar (di, ch  ) :: t when isAlpha ch || ch = '#' -> readSymbolAlphaNum di [] str
     | TokChar (di, ch  ) :: t when isSpecial ch -> readSymbolSpecial di [] str
-    | _ -> failwith "ill formed Schizo Token"
+    | h :: t -> raise (tokExcept (h.DebugInfo, "ill formed Schizo Token"))
+    | [] -> failwith "reached the end of the stream unexpectdly"
 
 type Token
 with
@@ -294,16 +316,24 @@ with
         
         loop [] str
 
-    static member tokenize (streamId: int) (str: string) : Token list =
-        str
-        |> Seq.toList
-        |> List.fold
-            (fun (di: DebugInfo, acc) ch ->
-                let di = { di with Offset = di.Offset + 1 } in (di, TokChar (di, ch) :: acc))
-            ({ DebugInfo.empty with StreamId = streamId }, [])
-        |> snd
-        |> List.rev
-        |> Token.tokenize_
+    static member tokenize (streamId: string) (str: string) : Token list =
+        if str.Length <> 0
+        then
+            str
+            |> Seq.toList
+            |> List.fold
+                (fun (di: DebugInfo, acc) ch ->
+                    let di =
+                        { di with
+                            Offset  = di.Offset + 1
+                            Line    = if ch = '\n' then di.Line + 1 else di.Line
+                        }
+                    (di, TokChar (di, ch) :: acc))
+                (DebugInfo.empty streamId, [])
+            |> snd
+            |> List.rev
+            |> Token.tokenize_
+        else []
 
 let test =
     [|
@@ -346,5 +376,5 @@ let test =
         "module Type {}"
         "datatype Type = Type #a #b #c#"
     |]
-    |> Array.map (Token.tokenize 0)
+    |> Array.map (Token.tokenize "")
     |> Array.iter (printfn "%A")
