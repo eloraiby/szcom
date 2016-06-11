@@ -10,6 +10,7 @@
 
 	record RecordUse {
 		field1	: TestRecord.Rec;
-		field2	: TestEnum.Enum
+		field2	: TestEnum.Enum;
+		field3	: TestUnion.Union
 	}
 }

@@ -187,12 +187,27 @@ let parseUnion (modName: string) (state: State) (tl: Token list) : TyUnion =
             |> List.map (fun tok ->
                 match tok with
                 | Token.TokExpression (di, tl) -> parseCase state tl
-                | _ -> failwith "parseUnion: expect \"Case Type\" got something else")
+                | _ -> failwith "parseUnion: expected \"Case Type\" got something else")
         { TyUnion.Name  = modName + "." + unionName
           TyUnion.Info = di
           TyUnion.Cases = cases |> List.toArray
         }
     | _ -> failwith "parseUnion: invalid union syntax"
+
+let parseInterface (modName: string) (state: State) (tl: Token list) : TyInterface =
+    match tl with
+    | Token.TokType (di, ifaceName) :: Token.TokScope(_, ifaceScope) :: [] ->
+        let methods =
+            ifaceScope
+            |> List.map (fun tok ->
+                match tok with
+                | Token.TokExpression (di, tl) -> parseField state tl
+                | _ -> failwith "parseInterface: expected \"method: function type\" got something else")
+        { TyInterface.Name = modName + "." + ifaceName
+          TyInterface.Info = di
+          TyInterface.Methods   = methods |> List.toArray
+        }
+    | _ -> failwith "parseInterface: invalid interface syntax"
 
 let rec parseUse (state: State) (tl: Token list) : State =
     match tl with
@@ -228,9 +243,13 @@ and parseModule (state: State) (tl: Token list) : TyModule =
             let ty = parseUnion modName innerState t |> Ty.Union
             innerState.addType (modName, ty), Some ty
 
-        | Token.TokIdentifier (di, "interface") :: t -> failwith "implement"
+        | Token.TokIdentifier (di, "interface") :: t ->
+            let ty = parseInterface modName innerState t |> Ty.Interface
+            innerState.addType (modName, ty), Some ty
+
         | Token.TokIdentifier (di, "object")    :: t -> failwith "implement"
         | Token.TokIdentifier (di, "alias")     :: t -> failwith "implement"
+
         | Token.TokIdentifier (di, "use")       :: t -> parseUse innerState t, None
 
         | xs -> failwith (sprintf "invalid token %O at this level in module expected one of {enum, record, union, interface, object, alias, use}" xs)
