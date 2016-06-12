@@ -142,6 +142,23 @@ with
         | Ty.Tuple       v -> v.Name
         | Ty.Array       v -> v.Type.Name
         | Ty.Alias       v -> v.Name
+
+    member x.DebugInfo  =
+        match x with
+        | Unit          -> { DebugInfo.StreamId = "Core"; DebugInfo.Line = 0; DebugInfo.Offset = 0 }
+        | Boolean       -> { DebugInfo.StreamId = "Core"; DebugInfo.Line = 0; DebugInfo.Offset = 0 }
+        | Char          -> { DebugInfo.StreamId = "Core"; DebugInfo.Line = 0; DebugInfo.Offset = 0 }
+        | Int64         -> { DebugInfo.StreamId = "Core"; DebugInfo.Line = 0; DebugInfo.Offset = 0 }
+        | Real64        -> { DebugInfo.StreamId = "Core"; DebugInfo.Line = 0; DebugInfo.Offset = 0 }
+        | Interface  ty -> ty.Info
+        | Record     ty -> ty.Info
+        | Union      ty -> ty.Info
+        | Enum       ty -> ty.Info
+        | Function   ty -> ty.Info
+        | Object     ty -> ty.Info
+        | Tuple      ty -> ty.Info
+        | Array      ty -> ty.Info
+        | Alias      ty -> ty.Info
  
 type TyModule = {
     Name    : string

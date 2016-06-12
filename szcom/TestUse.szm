@@ -2,6 +2,7 @@
 	use TestEnum;
 	use TestRecord;
 	use TestUnion;
+	use TestObject;
 
 	enum Enum2 {
 		HI		= 0;

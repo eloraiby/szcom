@@ -1,0 +1,24 @@
+﻿module TestObject {
+
+interface IFace1 {
+	doSomething 	: () -> Int;
+	doSomethingElse	: Int -> Char
+};
+
+interface IFace2 {
+	doSomething 	: () -> Int;
+	doSomethingElse	: Int -> Char
+};
+
+object Object1 implements (IFace1, TestObject.IFace2);
+
+object Object2 implements (TestObject.IFace1, TestObject.IFace2) with {
+	x				: Real;
+	y				: Real;
+	z				: Real;
+
+	doSomething 	: () -> Int;
+	doSomethingElse	: Int -> Char
+}
+
+}

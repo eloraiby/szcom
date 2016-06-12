@@ -65,6 +65,7 @@
     <None Include="TestRecord.szm" />
     <None Include="TestUnion.szm" />
     <None Include="TestUse.szm" />
+    <None Include="TestObject.szm" />
     <None Include="App.config" />
   </ItemGroup>
   <ItemGroup>
