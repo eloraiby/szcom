@@ -65,7 +65,7 @@ type State = {
         | Error e  -> Error e
     member x.addType(modName, ty) = x.addQualifiedType(ty).addUnqualifiedAlias(stripModName ty.Name, ty.Name)
 
-let parseEnum (modName: string) (tl: Token list) : TyEnum =
+let parseEnum di (modName: string) (tl: Token list) : TyEnum =
     let parseEnumCase di (tl: Token list) : TyEnumCase * Token list =
         match tl with
         | Token.TokExpression (di, tl) :: t ->
@@ -106,7 +106,7 @@ let parseEnum (modName: string) (tl: Token list) : TyEnum =
           TyEnum.Info   = di
           TyEnum.Cases  = cases |> List.rev |> List.toArray
         }
-    | xs -> failwith "enum expects a name and a scope, got something else"
+    | xs -> raise (tokExcept(di, "enum expects a name and a scope, got something else"))
 
 let rec parseType (state: State) (tl: Token list) : Ty =
     let parseTypePartial (tl: Token list) : DebugInfo * Ty * Token list =
@@ -148,7 +148,7 @@ let rec parseType (state: State) (tl: Token list) : Ty =
     let di =
         match tl with
         | h :: _ -> h.DebugInfo
-        | [] -> failwith "parseType: this shouldn't happen"
+        | [] -> failwith "parseType: unhandled case, this shouldn't happen"
 
     match parseTypeComplete tl with
     | ty, [] -> ty
@@ -176,7 +176,7 @@ and parseTuple (di: DebugInfo) (state: State) (tl: Token list) : Ty =
       TyTuple.Params    = tupleTys |> List.toArray |> Array.map(fun ty -> None, ty)
     } |> Ty.Tuple
 
-let parseField (state: State) (tl: Token list) : TyField =
+let parseField di (state: State) (tl: Token list) : TyField =
     match tl with
     | Token.TokIdentifier (di, fieldName) :: Token.TokOperator (_, ":") :: tl ->
         let ty = parseType state tl
@@ -185,14 +185,14 @@ let parseField (state: State) (tl: Token list) : TyField =
           TyField.Type  = ty }
 
     | h :: _ -> raise (tokExcept (h.DebugInfo, "invalid field syntax"))
-    | [] -> failwith "there is no field!!!"
+    | [] -> raise (tokExcept (di, "there is no field!!!"))
 
 let parseFieldScope (di: DebugInfo) (state: State) (modName: string, tyName: string) (scope: Token list) : TyField [] =
     let fields =
         scope
         |> List.map(fun tok ->
             match tok with
-            | Token.TokExpression (di, tl) -> parseField state tl
+            | Token.TokExpression (di, tl) -> parseField di state tl
             | _ -> raise (tokExcept(di, "parseRFieldScope: expected \"field : Type\" got something else")))
     
     let validate (fields: TyField list) =
@@ -207,7 +207,7 @@ let parseFieldScope (di: DebugInfo) (state: State) (modName: string, tyName: str
     validate fields
     |> List.toArray
 
-let parseRecord (modName: string) (state: State) (tl: Token list) : TyRecord =       
+let parseRecord di (modName: string) (state: State) (tl: Token list) : TyRecord =       
     match tl with
     | Token.TokType (di, recordName) :: Token.TokScope (_, recordScope) :: [] ->
 
@@ -217,9 +217,9 @@ let parseRecord (modName: string) (state: State) (tl: Token list) : TyRecord =
           TyRecord.Info = di
           TyRecord.Fields   = fields
         }
-    | _ -> failwith "parseRecord: invalid record syntax"
+    | _ -> raise (tokExcept (di, "parseRecord: invalid record syntax"))
 
-let parseCase (state: State) (tl: Token list) : TyUnionCase =
+let parseCase di (state: State) (tl: Token list) : TyUnionCase =
     match tl with
     | Token.TokType (di, caseName) :: tl ->
         let ty = parseType state tl
@@ -227,16 +227,16 @@ let parseCase (state: State) (tl: Token list) : TyUnionCase =
           TyUnionCase.Info  = di
           TyUnionCase.Type  = ty }
 
-    | _ -> failwith "invalid field syntax"
+    | _ -> raise (tokExcept (di, "invalid field syntax"))
 
-let parseUnion (modName: string) (state: State) (tl: Token list) : TyUnion =
+let parseUnion di (modName: string) (state: State) (tl: Token list) : TyUnion =
     match tl with
     | Token.TokType (di, unionName) :: Token.TokScope (_, unionScope) :: [] ->
         let cases =
             unionScope
             |> List.map (fun tok ->
                 match tok with
-                | Token.TokExpression (di, tl) -> parseCase state tl
+                | Token.TokExpression (di, tl) -> parseCase di state tl
                 | _ -> raise (tokExcept (di, "expected \"Case Type\" got something else")))
 
         let validate (cases: TyUnionCase list) =
@@ -255,43 +255,31 @@ let parseUnion (modName: string) (state: State) (tl: Token list) : TyUnion =
           TyUnion.Info = di
           TyUnion.Cases = cases |> List.toArray
         }
-    | _ -> failwith "invalid union syntax"
+    | _ -> raise (tokExcept (di, "invalid union syntax"))
 
-let parseInterface (modName: string) (state: State) (tl: Token list) : TyInterface =
+let parseInterface di (modName: string) (state: State) (tl: Token list) : TyInterface =
     match tl with
     | Token.TokType (di, ifaceName) :: Token.TokScope(_, ifaceScope) :: [] ->
-        let methods =
-            ifaceScope
-            |> List.map (fun tok ->
-                match tok with
-                | Token.TokExpression (di, tl) -> parseField state tl
-                | _ -> failwith "parseInterface: expected \"method: function type\" got something else")
+        let methods = parseFieldScope di state (modName, ifaceName) ifaceScope
 
-        let validate (methods: TyField list) =
+        let validate (methods: TyField []) =
             let methods =   // all fields should be methods
                 methods
-                |> List.map (fun m ->
+                |> Array.map (fun m ->
                     match m.Type with
                     | Ty.Function _ -> m
-                    | _ -> failwith (sprintf "validateInterface: interface %s has members that are not methods" ifaceName))
-
-            let methodMap = // no two methods should share the same name
-                methods
-                |> List.fold(fun (s: Set<string>) m ->
-                    match s.Contains m.Name with
-                    | true  -> failwith (sprintf "parseInterface: in interface %s.%s method %s already exist" modName ifaceName m.Name)
-                    | false -> s.Add m.Name) Set.empty
+                    | _ -> raise (tokExcept (di, sprintf "validateInterface: interface %s has members that are not methods" ifaceName)))
             methods
         
         let methods = validate methods
 
         { TyInterface.Name = modName + "." + ifaceName
           TyInterface.Info = di
-          TyInterface.Methods   = methods |> List.toArray
+          TyInterface.Methods   = methods
         }
-    | _ -> failwith "parseInterface: invalid interface syntax"
+    | _ -> raise (tokExcept (di, "parseInterface: invalid interface syntax"))
 
-let parseObject (modName: string) (state: State) (tl: Token list) : TyObject =
+let parseObject di (modName: string) (state: State) (tl: Token list) : TyObject =
     let getIfaceList (di, objName) (ifaceList: Token list) =
         let ifaces =
             ifaceList
@@ -340,9 +328,19 @@ let parseObject (modName: string) (state: State) (tl: Token list) : TyObject =
           TyObject.PrivMembers  = members
         }
 
-    | _ -> failwith "invalid object syntax"
+    | _ -> raise (tokExcept (di, "invalid object syntax"))
 
-let rec parseUse (modFolder: string) (state: State) (tl: Token list) : State =
+let parseAlias di (modName: string) (state: State) (tl: Token list) : TyAlias =
+    match tl with
+    | Token.TokType (di, tyName) :: Token.TokIdentifier (_, "for") :: tl ->
+        let ty = parseType state tl
+        { TyAlias.Name  = tyName
+          TyAlias.Ty    = ty
+          TyAlias.Info  = di
+        }
+    | _ -> raise (tokExcept (di, "implement"))
+
+let rec parseUse di (modFolder: string) (state: State) (tl: Token list) : State =
     match tl with
     | Token.TokType (di, modName) :: [] -> 
         let m  = parseModuleFile modFolder (modName + ".szm") state 
@@ -359,52 +357,57 @@ let rec parseUse (modFolder: string) (state: State) (tl: Token list) : State =
                           .Add(shortName, ty)
                     else mt) state.Types
         }
-    | _ -> failwith "Error: expecting use ModuleName"
+    | _ -> raise (tokExcept (di, "Error: expecting use ModuleName"))
 
 and parseModule (modFolder: string) (state: State) (tl: Token list) : TyModule =
-    let parseModEntry (innerState: State) (modName: string) (tl: Token list) : State * Ty option =
+    let parseModEntry di (innerState: State) (modName: string) (tl: Token list) : State * Ty option =
         match tl with
         | Token.TokIdentifier (di, "enum")      :: t ->
-            let ty = parseEnum modName t |> Ty.Enum
+            let ty = parseEnum di modName t |> Ty.Enum
             let state = innerState.addType (modName, ty)
             match state with
             | Value state -> state, Some ty
             | Error e     -> raise (tokExcept (di, e))
 
         | Token.TokIdentifier (di, "record")    :: t ->
-            let ty = parseRecord modName innerState t |> Ty.Record
+            let ty = parseRecord di modName innerState t |> Ty.Record
             let state = innerState.addType (modName, ty)
             match state with
             | Value state -> state, Some ty
             | Error e     -> raise (tokExcept (di, e))
 
         | Token.TokIdentifier (di, "union")     :: t ->
-            let ty = parseUnion modName innerState t |> Ty.Union
+            let ty = parseUnion di modName innerState t |> Ty.Union
             let state = innerState.addType (modName, ty)
             match state with
             | Value state -> state, Some ty
             | Error e     -> raise (tokExcept (di, e))
 
         | Token.TokIdentifier (di, "interface") :: t ->
-            let ty = parseInterface modName innerState t |> Ty.Interface
+            let ty = parseInterface di modName innerState t |> Ty.Interface
             let state = innerState.addType (modName, ty)
             match state with
             | Value state -> state, Some ty
             | Error e     -> raise (tokExcept (di, e))
 
         | Token.TokIdentifier (di, "object")    :: t ->
-            let ty = parseObject modName innerState t |> Ty.Object
+            let ty = parseObject di modName innerState t |> Ty.Object
             let state = innerState.addType (modName, ty)
             match state with
             | Value state -> state, Some ty
             | Error e     -> raise (tokExcept (di, e))
 
-        | Token.TokIdentifier (di, "alias")     :: t -> failwith "implement"
+        | Token.TokIdentifier (di, "alias")     :: t ->
+            let ty = parseAlias di modName innerState t |> Ty.Alias
+            let state = innerState.addType (modName, ty)
+            match state with
+            | Value state -> state, Some ty
+            | Error e     -> raise (tokExcept (di, e))
 
         | Token.TokIdentifier (di, "use")       :: t ->
-            parseUse modFolder innerState t, None
+            parseUse di modFolder innerState t, None
 
-        | xs -> failwith (sprintf "invalid token %O at this level in module. Expected one of {enum, record, union, interface, object, alias, use}" xs)
+        | xs -> raise (tokExcept (di, sprintf "invalid token %O at this level in module. Expected one of {enum, record, union, interface, object, alias, use}" xs))
 
     match tl with
     | Token.TokIdentifier(_, "module") :: Token.TokType (di, modName) :: TokScope (_, modScope) :: [] ->
@@ -412,14 +415,12 @@ and parseModule (modFolder: string) (state: State) (tl: Token list) : TyModule =
             modScope
             |> List.fold(fun (state: State, entries: Ty list) (t: Token) ->
                 match t with
-                | Token.TokExpression (_, tl) ->
-                    let state, entry = parseModEntry state modName tl
+                | Token.TokExpression (di, tl) ->
+                    let state, entry = parseModEntry di state modName tl
                     match entry with
                     | Some entry -> state, entry :: entries
-                    | None       ->
-                        printfn "%A" state
-                        state, entries
-                | _ -> failwith "module entry expected, got something else") (state, [])
+                    | None       -> state, entries
+                | t -> raise (tokExcept (t.DebugInfo, "module entry expected, got something else"))) (state, [])
 
         { TyModule.Name = modName
           TyModule.Info = di
@@ -430,11 +431,17 @@ and parseModule (modFolder: string) (state: State) (tl: Token list) : TyModule =
 
 and parseModuleFile (modFolder: string) (fName: string) (state: State) : TyModule =
     try
-        let stream = IO.File.ReadAllText (modFolder + "/" + fName)
-        let tl = Token.tokenize "" stream
+        let moduleFileName = modFolder + "/" + fName
+        let stream = IO.File.ReadAllText moduleFileName
+        let tl = Token.tokenize moduleFileName stream
         parseModule modFolder state tl
     with
         | TokenException diMsg ->
+            diMsg
+            |> List.map(fun (di, msg) ->
+                printfn "%s:%d - %s" di.StreamId di.Line msg)
+            |> ignore
+
             failwith (sprintf "%A" diMsg)
         | e ->
             failwith (sprintf "Error reading file: %s with %s" fName e.Message)
