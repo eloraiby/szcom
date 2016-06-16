@@ -2,8 +2,12 @@
 	enum Enum {
 		HELLO	= 0;
 		HELLO2	= 1
-	}
+	};
 
+	enum Enum1 {
+		HELLO	= 0;
+		HELLO2	= 1
+	}
 }
 
 

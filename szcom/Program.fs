@@ -15,8 +15,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
+open System
+
 open Schizo.AST
 open Schizo.Syntax
+open Schizo.CPP
 
 [<EntryPoint>]
 let main argv = 
@@ -27,7 +30,10 @@ let main argv =
         let folderName  = fInfo.DirectoryName
         let fname = fInfo.Name
         let m = parseModuleFile folderName fname (State.empty()) 
-        printfn "%A" m
+        let sb = Text.StringBuilder()
+        let bs = dumpModule sb m
+        let s = bs.ToString()
+        printfn "%s" s
         ()
     else printfn "invalid option: schizocom file.szm"
     0 // return an integer exit code

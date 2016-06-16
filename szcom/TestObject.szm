@@ -12,7 +12,7 @@ interface IFace2 {
 
 object Object1 implements (IFace1, TestObject.IFace2);
 
-object Object2 implements (TestObject.IFace1, Face2) with {
+object Object2 implements (TestObject.IFace1, IFace2) with {
 	x				: Real;
 	y				: Real;
 	z				: Real;

@@ -1,7 +1,30 @@
 ﻿module TestRecord {
-	record Rec {
-		field	: Int;
-		field2	: Bool;
-		field3	: Char
-	}
+	use TestEnum;
+
+	record Rec
+	{	field	: Int
+	;	field2	: Bool
+	;	field3	: Char
+	};
+
+	record Rec2
+	{	method	: Int -> Int
+	;	method2	: Char -> Int -> Char
+	;	field	: (Char, Char)
+	;	method3	: (Char, Char) -> Int
+	;	arr		: Char[]
+	;	rec1	: Rec
+	};
+
+	enum Enum
+	{ HELLO		= 0
+	; HELLO2	= 1
+	};
+
+	alias Rec3 for Rec2;
+
+	record Rec3 {
+		var1	: Int;
+		var3	: TestEnum.Enum1;
+	};
 }

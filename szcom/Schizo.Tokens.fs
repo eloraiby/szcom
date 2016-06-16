@@ -261,7 +261,7 @@ let reduceExpression di (toks: Token list) =
 
 let curr2Tup f x y = f(x, y)
 
-let rec private readListOfTokens di splitterChar endingChar (boxFunc: DebugInfo -> Token list -> Token) (acc: Token list) (str: Token list) : Token * Token list =
+let rec private readListOfTokens di splitterChar endingChar (allowSplitterAtEnd: bool) (boxFunc: DebugInfo -> Token list -> Token) (acc: Token list) (str: Token list) : Token * Token list =
     let str = skipWS str
     match str with
     | []                                 -> raise (tokExcept (di, sprintf "%s doesn't have an end '%c'" ((boxFunc di []).TokenTypeName) endingChar))
@@ -274,20 +274,20 @@ let rec private readListOfTokens di splitterChar endingChar (boxFunc: DebugInfo 
             | TokChar (_, ch) :: t when ch = endingChar                 -> let exp = acc |> List.rev |> reduceExpression di in exp, str
             | TokChar (_, ch) :: t when ch = splitterChar               ->
                 match skipWS t with
-                | TokChar (di, ch) :: t when ch = endingChar            -> raise (tokExcept (di, sprintf "%s ends with splitter '%c'" ((boxFunc di []).TokenTypeName) splitterChar))
+                | TokChar (di, ch) :: t when ch = endingChar && allowSplitterAtEnd = false -> raise (tokExcept (di, sprintf "%s ends with splitter '%c'" ((boxFunc di []).TokenTypeName) splitterChar))
                 | _     -> let exp = acc |> List.rev |> reduceExpression di in exp, t
             | _                                                         -> let tok, nextList = nextToken str in readExpression (tok :: acc) nextList
 
         // this call will reduce expression of the form "a b c ..."
         let tok, nextList = readExpression [] str
         // and this one will close the list
-        readListOfTokens di splitterChar endingChar boxFunc (tok :: acc) nextList
+        readListOfTokens di splitterChar endingChar allowSplitterAtEnd boxFunc (tok :: acc) nextList
 
-and private readScope di = readListOfTokens di ';' '}' (curr2Tup TokScope)
+and private readScope di = readListOfTokens di ';' '}' true (curr2Tup TokScope)
 
-and private readTuple di = readListOfTokens di ',' ')' (curr2Tup (TokTuple >> reduceTuple))
+and private readTuple di = readListOfTokens di ',' ')' false (curr2Tup (TokTuple >> reduceTuple))
 
-and private readList  di = readListOfTokens di ';' ']' (curr2Tup TokList)
+and private readList  di = readListOfTokens di ';' ']' true (curr2Tup TokList)
 
 and private nextToken (str: Token list) : Token * Token list =
     let str = skipWS str

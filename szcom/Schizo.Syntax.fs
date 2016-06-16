@@ -27,14 +27,10 @@ type RetVal<'T> =
     | Value of 'T
     | Error of string
 
-let stripModName (tyName: string) =
-    let pos = tyName.LastIndexOfAny [| '.' |]
-    tyName.Substring (pos + 1)
-
 type State = {
     CurrentFile : string
     Types       : Map<string, Ty>    // no recursive types yet
-    Modules     : TyModule list
+    Modules     : Module list
     Streams     : string list
 } with
     static member empty() = {
@@ -132,8 +128,18 @@ let rec parseType (state: State) (tl: Token list) : Ty =
         | h :: _ -> raise (tokExcept(h.DebugInfo, "while parsing type: invalid type syntax"))
         | [] -> failwith "parseType: unreachable"
 
-    let rec parseTypeComplete (tl: Token list) : Ty * Token list =
+    let parseArrayType (tl: Token list) : DebugInfo * Ty * Token list =
         let di, ty, tl = parseTypePartial tl
+        match tl with
+        | Token.TokList (_, []) :: tl ->
+            di
+            , Ty.Array { TyArray.Info = di
+                         TyArray.Type = ty
+                       }, tl
+        | _ -> di, ty, tl
+
+    let rec parseTypeComplete (tl: Token list) : Ty * Token list =
+        let di, ty, tl = parseArrayType tl
         match tl with
         | [] -> ty, []
         | Token.TokOperator (_, "->") :: tl -> 
@@ -338,74 +344,94 @@ let parseAlias di (modName: string) (state: State) (tl: Token list) : TyAlias =
           TyAlias.Ty    = ty
           TyAlias.Info  = di
         }
-    | _ -> raise (tokExcept (di, "implement"))
+    | _ -> raise (tokExcept (di, "invalid alias syntax"))
 
-let rec parseUse di (modFolder: string) (state: State) (tl: Token list) : State =
+let rec parseUse di (modFolder: string) (state: State) (tl: Token list) : string * State =
     match tl with
     | Token.TokType (di, modName) :: [] -> 
         let m  = parseModuleFile modFolder (modName + ".szm") state 
 
+        modName,
         { state with
             State.Types =
-                m.Types
-                |> Array.fold (fun (mt: Map<string, Ty>) (ty : Ty) ->
-                    let name = ty.Name
-                    if name.Contains(modName)
-                    then
-                        let shortName = name.Substring(0, modName.Length + 1)
-                        mt.Add(ty.Name, ty)
-                          .Add(shortName, ty)
-                    else mt) state.Types
+                m.Decls
+                |> Array.fold (fun (mt: Map<string, Ty>) (decl : Declaration) ->
+                    match decl with
+                    | Declaration.Use _ -> mt
+                    | _ ->
+                        let ty =
+                            match decl with
+                            | Declaration.Interface ty -> ty |> Ty.Interface
+                            | Declaration.Record    ty -> ty |> Ty.Record
+                            | Declaration.Union     ty -> ty |> Ty.Union
+                            | Declaration.Enum      ty -> ty |> Ty.Enum
+                            | Declaration.Object    ty -> ty |> Ty.Object
+                            | Declaration.Alias     ty -> ty |> Ty.Alias
+                            | _ -> failwith "unreachable"
+                        let name = ty.Name
+                        if name.Contains(modName)
+                        then
+                            let shortName = name.Substring(0, modName.Length + 1)
+                            mt.Add(name, ty)
+                              .Add(shortName, ty)
+                        else mt) state.Types
         }
     | _ -> raise (tokExcept (di, "Error: expecting use ModuleName"))
 
-and parseModule (modFolder: string) (state: State) (tl: Token list) : TyModule =
-    let parseModEntry di (innerState: State) (modName: string) (tl: Token list) : State * Ty option =
+and parseModule (modFolder: string) (state: State) (tl: Token list) : Module =
+    let parseModEntry di (innerState: State) (modName: string) (tl: Token list) : State * Declaration =
         match tl with
         | Token.TokIdentifier (di, "enum")      :: t ->
-            let ty = parseEnum di modName t |> Ty.Enum
+            let decl = parseEnum di modName t 
+            let ty = decl |> Ty.Enum
             let state = innerState.addType (modName, ty)
             match state with
-            | Value state -> state, Some ty
+            | Value state -> state, decl |> Declaration.Enum
             | Error e     -> raise (tokExcept (di, e))
 
         | Token.TokIdentifier (di, "record")    :: t ->
-            let ty = parseRecord di modName innerState t |> Ty.Record
+            let decl = parseRecord di modName innerState t
+            let ty = decl |> Ty.Record
             let state = innerState.addType (modName, ty)
             match state with
-            | Value state -> state, Some ty
+            | Value state -> state, decl |> Declaration.Record
             | Error e     -> raise (tokExcept (di, e))
 
         | Token.TokIdentifier (di, "union")     :: t ->
-            let ty = parseUnion di modName innerState t |> Ty.Union
+            let decl = parseUnion di modName innerState t
+            let ty = decl |> Ty.Union
             let state = innerState.addType (modName, ty)
             match state with
-            | Value state -> state, Some ty
+            | Value state -> state, decl |> Declaration.Union
             | Error e     -> raise (tokExcept (di, e))
 
         | Token.TokIdentifier (di, "interface") :: t ->
-            let ty = parseInterface di modName innerState t |> Ty.Interface
+            let decl = parseInterface di modName innerState t
+            let ty = decl |> Ty.Interface
             let state = innerState.addType (modName, ty)
             match state with
-            | Value state -> state, Some ty
+            | Value state -> state, decl |> Declaration.Interface
             | Error e     -> raise (tokExcept (di, e))
 
         | Token.TokIdentifier (di, "object")    :: t ->
-            let ty = parseObject di modName innerState t |> Ty.Object
+            let decl = parseObject di modName innerState t
+            let ty = decl |> Ty.Object
             let state = innerState.addType (modName, ty)
             match state with
-            | Value state -> state, Some ty
+            | Value state -> state, decl |> Declaration.Object
             | Error e     -> raise (tokExcept (di, e))
 
         | Token.TokIdentifier (di, "alias")     :: t ->
-            let ty = parseAlias di modName innerState t |> Ty.Alias
+            let decl = parseAlias di modName innerState t
+            let ty = decl |> Ty.Alias
             let state = innerState.addType (modName, ty)
             match state with
-            | Value state -> state, Some ty
+            | Value state -> state, decl |> Declaration.Alias
             | Error e     -> raise (tokExcept (di, e))
 
         | Token.TokIdentifier (di, "use")       :: t ->
-            parseUse di modFolder innerState t, None
+            let modName, state = parseUse di modFolder innerState t
+            state, Declaration.Use (di, modName)
 
         | xs -> raise (tokExcept (di, sprintf "invalid token %O at this level in module. Expected one of {enum, record, union, interface, object, alias, use}" xs))
 
@@ -413,23 +439,22 @@ and parseModule (modFolder: string) (state: State) (tl: Token list) : TyModule =
     | Token.TokIdentifier(_, "module") :: Token.TokType (di, modName) :: TokScope (_, modScope) :: [] ->
         let state, entries =
             modScope
-            |> List.fold(fun (state: State, entries: Ty list) (t: Token) ->
+            |> List.fold(fun (state: State, entries: Declaration list) (t: Token) ->
                 match t with
                 | Token.TokExpression (di, tl) ->
                     let state, entry = parseModEntry di state modName tl
-                    match entry with
-                    | Some entry -> state, entry :: entries
-                    | None       -> state, entries
+                    state, entry :: entries
+
                 | t -> raise (tokExcept (t.DebugInfo, "module entry expected, got something else"))) (state, [])
 
-        { TyModule.Name = modName
-          TyModule.Info = di
-          TyModule.Types = entries |> List.rev |> List.toArray
+        { Module.Name   = modName
+          Module.Info   = di
+          Module.Decls  = entries |> List.rev |> List.toArray
         }
     | _ -> failwith "error parsing module"
 
 
-and parseModuleFile (modFolder: string) (fName: string) (state: State) : TyModule =
+and parseModuleFile (modFolder: string) (fName: string) (state: State) : Module =
     try
         let moduleFileName = modFolder + "/" + fName
         let stream = IO.File.ReadAllText moduleFileName

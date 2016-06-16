@@ -160,8 +160,29 @@ with
         | Array      ty -> ty.Info
         | Alias      ty -> ty.Info
  
-type TyModule = {
+[<RequireQualifiedAccess>]       
+type Declaration =
+    | Use           of DebugInfo * string
+    | Interface     of TyInterface
+    | Record        of TyRecord
+    | Union         of TyUnion
+    | Enum          of TyEnum
+    | Object        of TyObject
+    | Alias         of TyAlias
+
+type Module = {
     Name    : string
     Info    : DebugInfo
-    Types   : Ty []
+    Decls   : Declaration []
 }
+
+let stripModName (tyName: string) =
+    let pos = tyName.LastIndexOfAny [| '.' |]
+    tyName.Substring (pos + 1)
+
+type Ty
+with
+    member x.ShortName = stripModName x.Name
+    member x.ModuleName =
+        let e = x.Name.IndexOfAny [| '.' |]
+        x.Name.Substring(0, e)
