@@ -30,6 +30,9 @@ let indent (n: int) =
 let makeFirstLetterUpper (s: string) =
     (sprintf "%c" (Char.ToUpper s.[0])) + s.[1..]
 
+let makeFirstLetterLower (s: string) =
+    (sprintf "%c" (Char.ToLower s.[0])) + s.[1..]
+
 let rec typeName (tupleAsArgs: bool) (ty: Ty) =
     let replaceDot (s: string) = s.Replace (".", "::")
 
@@ -87,6 +90,9 @@ let dumpInterface (sb: Text.StringBuilder) (tyIFace : TyInterface) =
             sb.Append (sprintf "virtual %s%s = 0;\n" (indent 1) (dumpMethodType f))) sb
     sb.Append "};\n"
 
+///
+/// Record
+///
 let dumpRecord (sb: Text.StringBuilder) (tyRecord : TyRecord) =
     let recordConstructorArgs =
         tyRecord.Fields
@@ -150,6 +156,9 @@ let dumpRecord (sb: Text.StringBuilder) (tyRecord : TyRecord) =
             sb.Append (sprintf "%s%s %s_;\n" (indent 1) (typeName false f.Type) f.Name)) sb
     sb.Append "};\n"
 
+///
+/// Union
+///
 let dumpUnion (sb: Text.StringBuilder) (tyUnion : TyUnion) =
     let sb = sb.Append (sprintf "struct %s {\n" (stripModName tyUnion.Name))
 
@@ -159,6 +168,8 @@ let dumpUnion (sb: Text.StringBuilder) (tyUnion : TyUnion) =
         |> Array.fold (fun (sb: Text.StringBuilder) c ->
             sb.Append (sprintf "%sstruct %s;\n" (indent 1) c.Name)) sb
 
+    let sb = sb.Append (sprintf "\n%s~%s();\n" (indent 1) (stripModName tyUnion.Name))
+
     // tags
     let sb = sb.Append (sprintf "protected:\n%senum class TAG {\n" (indent 1))
     let sb =
@@ -167,25 +178,59 @@ let dumpUnion (sb: Text.StringBuilder) (tyUnion : TyUnion) =
             sb.Append (sprintf "%s%s,\n" (indent 2) c.Name)) sb
     let sb = sb.Append (sprintf "%s};\n" (indent 1))
 
+    // union
+    let sb = sb.Append (sprintf "%sunion U {\n" (indent 1))
+    let sb =
+        tyUnion.Cases
+        |> Array.fold (fun (sb: Text.StringBuilder) c ->
+            sb.Append (sprintf "%s%s %s;\n" (indent 2) (typeName false c.Type) (makeFirstLetterLower c.Name))) sb
+    let sb = sb.Append (sprintf "%sU() {}\n%s~U() {}\n" (indent 2) (indent 2))
+    let sb = sb.Append (sprintf "%s} u_;\n" (indent 1))
+
     // default constructor
     let sb = sb.Append (sprintf "%s%s(TAG tag) : tag_(tag) {}\n" (indent 1) (stripModName tyUnion.Name))
 
-
-    (*let sb =
-        let dumpCase (tyc: TyUnionCase) =
-            sprintf "struct %s::%s" (striptyc.Name
-        tyUnion.Cases
-        |> Array.fold (fun (sb: Text.StringBuilder) c ->
-            sb.Append (dumpCase c)) sb
-    *)
     let sb = sb.Append (sprintf "private:\n%sTAG tag_;\n" (indent 1))
-    (*
+
+    let sb = sb.Append "};\n\n"
+
+    // now dump all cases
+    let dumpCase (sb: Text.StringBuilder) (c: TyUnionCase) =
+        let sb = sb.Append (sprintf "struct %s::%s {\n" (stripModName tyUnion.Name) c.Name)
+        let sb = sb.Append (sprintf "%s%s(%s param) : %s(TAG::%s) {\n" (indent 1) c.Name (constTypeName false c.Type) (stripModName tyUnion.Name) c.Name)
+        let sb = sb.Append (sprintf "%su_.%s = param;\n" (indent 2) (makeFirstLetterLower c.Name))
+        let sb = sb.Append (sprintf "%s}\n\n" (indent 1))
+        let sb = sb.Append (sprintf "%s%s value() const { return u_.%s; }\n" (indent 1) (constTypeName false c.Type) (makeFirstLetterLower c.Name))
+        sb.Append "};\n\n"
+
     let sb =
         tyUnion.Cases
-        |> Array.fold(fun (sb: Text.StringBuilder) f ->
-            sb.Append (sprintf "%s%s;\n" (indent 1) (dumpField f))) sb
-    *)
-    sb.Append "};\n"
+        |> Array.fold dumpCase sb
+
+    let sb = sb.Append (sprintf "%s::~%s() {\n" (stripModName tyUnion.Name) (stripModName tyUnion.Name))
+    let sb = sb.Append (sprintf "%sswitch(tag_) {\n" (indent 1))
+    let sb =
+        let rec destructor (pre: string) (ty: Ty) =
+            match ty with
+            | Ty.Unit          -> "" 
+            | Ty.Boolean       -> ""
+            | Ty.Char          -> ""
+            | Ty.Int64         -> ""
+            | Ty.Real64        -> ""
+            | Ty.Interface   _ -> ""
+            | Ty.Record      v -> sprintf "%s.~%s; " pre (stripModName v.Name)
+            | Ty.Union       v -> sprintf "%s.~%s; " pre (stripModName v.Name)
+            | Ty.Enum        _ -> ""
+            | Ty.Function    _ -> sprintf "%s.~Function(); " pre
+            | Ty.Object      v -> sprintf "%s.~%s; " pre (stripModName v.Name)
+            | Ty.Tuple       v -> sprintf "%s.~Tuple%d(); " pre v.Params.Length
+            | Ty.Array       _ -> sprintf "%s.~Array(); " pre
+            | Ty.Alias       t -> destructor pre t.Ty
+        tyUnion.Cases
+        |> Array.fold (fun (sb : Text.StringBuilder) c ->
+            sb.Append (sprintf "%scase TAG::%s: %sbreak;\n" (indent 2) c.Name  (destructor (sprintf "u_.%s" (makeFirstLetterLower c.Name)) c.Type)) ) sb
+    let sb = sb.Append (sprintf "%s}\n" (indent 1))
+    sb.Append "}\n\n"
 
 let dumpEnum (sb: Text.StringBuilder) (tyEnum: TyEnum) =
     let sb = sb.Append (sprintf "enum class %s {\n" (stripModName tyEnum.Name)) 
