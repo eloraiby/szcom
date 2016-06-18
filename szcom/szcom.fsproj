@@ -26,7 +26,7 @@
     <Prefer32Bit>true</Prefer32Bit>
     <StartArguments>TestUse.szm</StartArguments>
     <StartWorkingDirectory>..\..\</StartWorkingDirectory>
-    <Commandlineparameters>../../TestRecord.szm</Commandlineparameters>
+    <Commandlineparameters>../../TestUnion.szm</Commandlineparameters>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>

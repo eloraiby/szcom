@@ -21,6 +21,12 @@ open Schizo.AST
 open Schizo.Syntax
 open Schizo.CPP
 
+let loadModule (modFolder: string) (loadedMods: Set<string>) modName =
+    if loadedMods.Contains modName
+    then loadedMods, None
+    else loadedMods.Add modName, Some (parseModuleFile modFolder modName (State.empty()))
+
+
 [<EntryPoint>]
 let main argv = 
     if argv.Length = 1
@@ -28,12 +34,14 @@ let main argv =
         let fname = argv.[0]
         let fInfo = System.IO.FileInfo (fname)
         let folderName  = fInfo.DirectoryName
-        let fname = fInfo.Name
-        let m = parseModuleFile folderName fname (State.empty()) 
-        let sb = Text.StringBuilder()
-        let bs = dumpModule sb m
-        let s = bs.ToString()
-        printfn "%s" s
-        ()
+
+        let loadedMods, modS = loadModule folderName Set.empty (System.IO.Path.GetFileNameWithoutExtension fInfo.Name)
+        match modS with
+        | Some m ->
+            let sb = Text.StringBuilder()
+            let bs = dumpModule (loadModule folderName) (Set.empty, sb) m
+            let s = bs.ToString()
+            printfn "%s" s
+        | None -> ()
     else printfn "invalid option: schizocom file.szm"
     0 // return an integer exit code

@@ -151,16 +151,41 @@ let dumpRecord (sb: Text.StringBuilder) (tyRecord : TyRecord) =
     sb.Append "};\n"
 
 let dumpUnion (sb: Text.StringBuilder) (tyUnion : TyUnion) =
-    failwith "implement"
-    (*
     let sb = sb.Append (sprintf "struct %s {\n" (stripModName tyUnion.Name))
+
+    // forward struct declaration
+    let sb =
+        tyUnion.Cases
+        |> Array.fold (fun (sb: Text.StringBuilder) c ->
+            sb.Append (sprintf "%sstruct %s;\n" (indent 1) c.Name)) sb
+
+    // tags
+    let sb = sb.Append (sprintf "protected:\n%senum class TAG {\n" (indent 1))
+    let sb =
+        tyUnion.Cases
+        |> Array.fold (fun (sb: Text.StringBuilder) c ->
+            sb.Append (sprintf "%s%s,\n" (indent 2) c.Name)) sb
+    let sb = sb.Append (sprintf "%s};\n" (indent 1))
+
+    // default constructor
+    let sb = sb.Append (sprintf "%s%s(TAG tag) : tag_(tag) {}\n" (indent 1) (stripModName tyUnion.Name))
+
+
+    (*let sb =
+        let dumpCase (tyc: TyUnionCase) =
+            sprintf "struct %s::%s" (striptyc.Name
+        tyUnion.Cases
+        |> Array.fold (fun (sb: Text.StringBuilder) c ->
+            sb.Append (dumpCase c)) sb
+    *)
+    let sb = sb.Append (sprintf "private:\n%sTAG tag_;\n" (indent 1))
+    (*
     let sb =
         tyUnion.Cases
         |> Array.fold(fun (sb: Text.StringBuilder) f ->
             sb.Append (sprintf "%s%s;\n" (indent 1) (dumpField f))) sb
-    let sb = sb.Append "};\n"
-    sb.ToString ()
     *)
+    sb.Append "};\n"
 
 let dumpEnum (sb: Text.StringBuilder) (tyEnum: TyEnum) =
     let sb = sb.Append (sprintf "enum class %s {\n" (stripModName tyEnum.Name)) 
@@ -176,13 +201,17 @@ let dumpObject (sb: Text.StringBuilder) (tyObject: TyObject) =
 let dumpAlias (sb: Text.StringBuilder) (tyObject: TyAlias) =
     sb.Append (sprintf "typedef ::%s %s;\n" (tyObject.Ty.Name.Replace (".", "::")) (stripModName tyObject.Name))
 
-let dumpModule (sb: Text.StringBuilder) (tyMod: Module) : Text.StringBuilder =
-    let sb =
+let rec dumpModule (loadModule: Set<string> -> string -> Set<string> * Module option) (mods: Set<string>, sb: Text.StringBuilder) (tyMod: Module) : Text.StringBuilder =
+    let mods, sb =
         // handle use
         tyMod.Decls
         |> Array.filter(fun d -> match d with Declaration.Use _ -> true | _ -> false)
         |> Array.map(fun d -> match d with Declaration.Use (_, name) -> name | _ -> failwith "unreachable")
-        |> Array.fold (fun (sb: Text.StringBuilder) n -> sb.Append (sprintf "#include \"%s.hpp\"\n" n)) sb
+        |> Array.fold (fun (mods: Set<string>, sb: Text.StringBuilder) n -> 
+            let mods, m = loadModule mods n
+            match m with
+            | Some m -> mods, (dumpModule loadModule (mods, sb) m).Append "\n"
+            | None   -> mods, sb) (mods, sb)
 
     let sb = sb.Append (sprintf "namespace %s {\n" tyMod.Name) 
 
@@ -191,7 +220,7 @@ let dumpModule (sb: Text.StringBuilder) (tyMod: Module) : Text.StringBuilder =
         |> Array.fold(fun (sb: Text.StringBuilder) d ->
             let sb =
                 match d with
-                | Declaration.Use        _  -> sb
+                | Declaration.Use   (di, m) -> sb.Append (sprintf "using namespace %s;\n" m)
                 | Declaration.Interface  ty -> dumpInterface sb ty
                 | Declaration.Record     ty -> dumpRecord sb ty
                 | Declaration.Union      ty -> dumpUnion sb ty

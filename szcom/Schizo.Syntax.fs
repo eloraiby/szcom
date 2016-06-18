@@ -349,7 +349,7 @@ let parseAlias di (modName: string) (state: State) (tl: Token list) : TyAlias =
 let rec parseUse di (modFolder: string) (state: State) (tl: Token list) : string * State =
     match tl with
     | Token.TokType (di, modName) :: [] -> 
-        let m  = parseModuleFile modFolder (modName + ".szm") state 
+        let m  = parseModuleFile modFolder modName state 
 
         modName,
         { state with
@@ -456,7 +456,7 @@ and parseModule (modFolder: string) (state: State) (tl: Token list) : Module =
 
 and parseModuleFile (modFolder: string) (fName: string) (state: State) : Module =
     try
-        let moduleFileName = modFolder + "/" + fName
+        let moduleFileName = modFolder + "/" + fName + ".szm"
         let stream = IO.File.ReadAllText moduleFileName
         let tl = Token.tokenize moduleFileName stream
         parseModule modFolder state tl
