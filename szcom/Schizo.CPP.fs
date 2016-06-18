@@ -170,6 +170,15 @@ let dumpUnion (sb: Text.StringBuilder) (tyUnion : TyUnion) =
 
     let sb = sb.Append (sprintf "\n%s~%s();\n" (indent 1) (stripModName tyUnion.Name))
 
+    let casesAsParams =
+        tyUnion.Cases
+        |> Array.fold (fun (s: string) c ->
+            match s with
+            | "" -> sprintf "Core::Function<T(%s)> %s" (constTypeName false c.Type) (makeFirstLetterLower c.Name)
+            | _  -> sprintf "%s, Core::Function<T(%s)> %s" s (constTypeName false c.Type) (makeFirstLetterLower c.Name)) ""
+
+    let sb = sb.Append (sprintf "\n%stemplate<typename T>\n%sT caseOf(%s) const;\n" (indent 1) (indent 1) casesAsParams)
+
     // tags
     let sb = sb.Append (sprintf "protected:\n%senum class TAG {\n" (indent 1))
     let sb =
@@ -185,7 +194,10 @@ let dumpUnion (sb: Text.StringBuilder) (tyUnion : TyUnion) =
         |> Array.fold (fun (sb: Text.StringBuilder) c ->
             sb.Append (sprintf "%s%s %s;\n" (indent 2) (typeName false c.Type) (makeFirstLetterLower c.Name))) sb
     let sb = sb.Append (sprintf "%sU() {}\n%s~U() {}\n" (indent 2) (indent 2))
-    let sb = sb.Append (sprintf "%s} u_;\n" (indent 1))
+    let sb = sb.Append (sprintf "%s} u_;\n\n" (indent 1))
+
+    // tag getter
+    let sb = sb.Append (sprintf "%sTAG tag() const { return tag_; }\n\n" (indent 1))
 
     // default constructor
     let sb = sb.Append (sprintf "%s%s(TAG tag) : tag_(tag) {}\n" (indent 1) (stripModName tyUnion.Name))
@@ -230,7 +242,18 @@ let dumpUnion (sb: Text.StringBuilder) (tyUnion : TyUnion) =
         |> Array.fold (fun (sb : Text.StringBuilder) c ->
             sb.Append (sprintf "%scase TAG::%s: %sbreak;\n" (indent 2) c.Name  (destructor (sprintf "u_.%s" (makeFirstLetterLower c.Name)) c.Type)) ) sb
     let sb = sb.Append (sprintf "%s}\n" (indent 1))
-    sb.Append "}\n\n"
+    let sb = sb.Append "}\n\n"
+
+    // caseof implementation
+    let sb = sb.Append (sprintf "template<typename T>\nT %s::caseOf(%s) {\n" (stripModName tyUnion.Name) casesAsParams)
+    let sb = sb.Append (sprintf "%sswitch(tag()) {\n" (indent 1))
+    let sb =
+        tyUnion.Cases
+        |> Array.fold (fun (sb: Text.StringBuilder) c ->
+            sb.Append (sprintf "%scase TAG::%s: return %s(u_.%s);\n" (indent 2) c.Name (makeFirstLetterLower c.Name) (makeFirstLetterLower c.Name)) ) sb
+    let sb = sb.Append (sprintf "%s}\n" (indent 1))
+    let sb = sb.Append "}\n"
+    sb
 
 let dumpEnum (sb: Text.StringBuilder) (tyEnum: TyEnum) =
     let sb = sb.Append (sprintf "enum class %s {\n" (stripModName tyEnum.Name)) 
