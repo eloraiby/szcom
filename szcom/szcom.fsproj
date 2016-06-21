@@ -59,7 +59,6 @@
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Schizo.Tokens.fs" />
     <Compile Include="Schizo.AST.fs" />
-    <Compile Include="Schizo.Syntax.fs" />
     <Compile Include="Schizo.CPP.fs" />
     <Compile Include="Program.fs" />
     <None Include="TestEnum.szm" />
@@ -68,6 +67,7 @@
     <None Include="TestObject.szm" />
     <None Include="TestUse.szm" />
     <None Include="App.config" />
+    <Compile Include="Schizo.Parser.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="mscorlib" />
