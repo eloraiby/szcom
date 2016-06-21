@@ -199,7 +199,7 @@ let parseFieldScope (di: DebugInfo) (state: State) (modName: string, tyName: str
         |> List.map(fun tok ->
             match tok with
             | Token.TokExpression (di, tl) -> parseField di state tl
-            | _ -> raise (tokExcept(di, "parseRFieldScope: expected \"field : Type\" got something else")))
+            | _ -> raise (tokExcept(di, "parseFieldScope: expected \"field : Type\" got something else")))
     
     let validate (fields: TyField list) =
         let fieldMap = // no two fieldss should share the same name
@@ -246,7 +246,6 @@ let parseUnion di (modName: string) (state: State) (tl: Token list) : TyUnion =
                 | _ -> raise (tokExcept (di, "expected \"Case Type\" got something else")))
 
         let validate (cases: TyUnionCase list) =
-
             let caseMap = // no two cases should share the same name
                 cases
                 |> List.fold(fun (s: Set<string>) m ->
