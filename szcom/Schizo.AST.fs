@@ -159,7 +159,62 @@ with
         | Tuple      ty -> ty.Info
         | Array      ty -> ty.Info
         | Alias      ty -> ty.Info
- 
+
+type Position = {
+    X   : float
+    Y   : float
+}
+
+type Meta = Position option
+
+[<RequireQualifiedAccess>]
+type Exp =
+    | Unit          of Meta
+    | Boolean       of Meta * bool
+    | Char          of Meta * char
+    | Int64         of Meta * int64
+    | Real64        of Meta * double
+    | Interface     of Meta * ExpInterface
+    | Record        of Meta * ExpRecord
+    | Union         of Meta * ExpUnionCase
+    | Enum          of Meta * ExpEnumCase
+    | Function      of Meta * TyFunction
+    | Object        of Meta * TyObject
+    | Tuple         of Meta * TyTuple
+    | Array         of Meta * TyArray
+    | Alias         of Meta * TyAlias
+
+    | Push          of Meta * Exp
+    | Call          of Meta * string
+    | Ret           of Meta * Exp
+    | ITE           of Meta * Exp * Exp * Exp
+
+and ExpInterface = {
+    Type        : TyInterface
+    Reference   : int
+}
+
+and ExpRecord = {
+    Type        : TyRecord
+    FieldValues : Exp []
+}
+
+and ExpUnionCase = {
+    Type        : TyUnion
+    Case        : int
+    Values      : Exp []
+}
+
+and ExpEnumCase = {
+    Type        : TyEnum
+    Case        : int
+}
+
+and ExpTuple = {
+    Type        : TyTuple
+    Values      : Exp []
+}
+
 [<RequireQualifiedAccess>]       
 type Declaration =
     | Use           of DebugInfo * string
@@ -186,3 +241,4 @@ with
     member x.ModuleName =
         let e = x.Name.IndexOfAny [| '.' |]
         x.Name.Substring(0, e)
+

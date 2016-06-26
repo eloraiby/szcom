@@ -18,7 +18,7 @@
 open System
 
 open Schizo.AST
-open Schizo.Syntax
+open Schizo.Parser
 open Schizo.CPP
 
 let loadModule (modFolder: string) (loadedMods: Set<string>) modName =
